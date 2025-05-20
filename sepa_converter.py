@@ -69,7 +69,7 @@ def generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic):
         ET.SubElement(cdtr_id, "IBAN").text = row["IBAN"]
 
         rmt_inf = ET.SubElement(cdt_trf_tx_inf, "RmtInf")
-        ET.SubElement(rmt_inf, "Ustrd").text = ""  # force blank description
+        ET.SubElement(rmt_inf, "Ustrd").text = "-"  # force blank description
 
     output_file = f"sepa_{message_id}.xml"
     ET.ElementTree(root).write(output_file, encoding="utf-8", xml_declaration=True)
