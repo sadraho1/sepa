@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import xml.etree.ElementTree as ET
@@ -50,7 +51,10 @@ def generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic):
     for idx, row in df.iterrows():
         cdt_trf_tx_inf = ET.SubElement(pmt_inf, "CdtTrfTxInf")
         pmt_id = ET.SubElement(cdt_trf_tx_inf, "PmtId")
-        ET.SubElement(pmt_id, "EndToEndId").text = row["RemittanceInfo"][:35] if pd.notna(row["RemittanceInfo"]) else f"TRX-{idx+1:05d}"
+
+        # Ensure EndToEndId is populated with RemittanceInfo or fallback
+        remit = str(row["RemittanceInfo"]) if pd.notna(row["RemittanceInfo"]) else ""
+        ET.SubElement(pmt_id, "EndToEndId").text = remit.strip()[:35] if remit.strip() else f"TRX-{idx+1:05d}"
 
         amt = ET.SubElement(cdt_trf_tx_inf, "Amt")
         instd_amt = ET.SubElement(amt, "InstdAmt", Ccy=currency)
@@ -65,13 +69,12 @@ def generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic):
         ET.SubElement(cdtr_id, "IBAN").text = row["IBAN"]
 
         rmt_inf = ET.SubElement(cdt_trf_tx_inf, "RmtInf")
-        ET.SubElement(rmt_inf, "Ustrd").text = ""
+        ET.SubElement(rmt_inf, "Ustrd").text = ""  # force blank description
 
     output_file = f"sepa_{message_id}.xml"
     ET.ElementTree(root).write(output_file, encoding="utf-8", xml_declaration=True)
     return output_file
 
-# Streamlit Interface
 st.title("SEPA XML Converter (pain.001.001.09)")
 
 uploaded_file = st.file_uploader("Upload CSV", type="csv")
