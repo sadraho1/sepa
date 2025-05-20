@@ -95,7 +95,7 @@ if uploaded_file is not None:
     col_creditor = st.selectbox("Creditor Name Column", col_names, index=4)
     col_iban = st.selectbox("IBAN Column", col_names, index=35)
     col_amount = st.selectbox("Amount Column", col_names, index=13)
-    col_remittance = st.selectbox("Remittance Info Column", col_names, index=36)
+    col_remittance = st.selectbox("Remittance Info Column", col_names, index=37)
 
     if st.button("Generate SEPA XML"):
         df_sepa = pd.DataFrame({
