@@ -4,23 +4,25 @@ import io
 import xml.etree.ElementTree as ET
 from decimal import Decimal
 
-# ISO20022 namespaces and schema locations
+# ISO20022 namespace and schema
 NS = 'urn:iso:std:iso:20022:tech:xsd:pain.001.001.09'
-EXT_NS = 'urn:iso:std:iso:20022:tech:xsd:supl.001.001.01'
-XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance'
-SCHEMA_LOCATION = f"{NS} pain.001.001.09.xsd {EXT_NS} supl.001.001.01.xsd"
+XSI = 'http://www.w3.org/2001/XMLSchema-instance'
+SCHEMA_LOCATION = f"{NS} pain.001.001.09.xsd"
+
+# Register namespace
+ET.register_namespace('', NS)
+ET.register_namespace('xsi', XSI)
 
 
 def convert_csv_to_xml(csv_bytes):
-    # Parse CSV
-    decoded = csv_bytes.decode('utf-8')
-    reader = csv.reader(io.StringIO(decoded))
-    rows = [row for row in reader if any(cell.strip() for cell in row)]
+    data = csv_bytes.decode('utf-8')
+    reader = csv.reader(io.StringIO(data))
+    rows = [r for r in reader if any(cell.strip() for cell in r)]
     if len(rows) < 2:
         return None
     header, payments = rows[0], rows[1:]
 
-    # Header fields
+    # Header info
     msgid = header[2].strip() or 'MSG1'
     creation_date = header[32].split()[-1]
     debtor_name = header[4].strip()
@@ -32,19 +34,16 @@ def convert_csv_to_xml(csv_bytes):
     ctrl_sum = sum(amounts)
     nb_tx = len(payments)
 
-    # Root element as CstmrCdtTrfInitn with default ns and schema attributes
-    root = ET.Element(
-        f'{{{NS}}}CstmrCdtTrfInitn',
-        {
-            'xmlns': NS,
-            'xmlns:ext': EXT_NS,
-            'xmlns:xsi': XSI_NS,
-            'xsi:schemaLocation': SCHEMA_LOCATION
-        }
-    )
+    # Root Document element
+    doc = ET.Element('Document', {
+        'xmlns': NS,
+        'xmlns:xsi': XSI,
+        'xsi:schemaLocation': SCHEMA_LOCATION
+    })
+    cstmr = ET.SubElement(doc, f'{{{NS}}}CstmrCdtTrfInitn')
 
     # Group Header
-    grp = ET.SubElement(root, 'GrpHdr')
+    grp = ET.SubElement(cstmr, 'GrpHdr')
     ET.SubElement(grp, 'MsgId').text = msgid
     ET.SubElement(grp, 'CreDtTm').text = f"{creation_date}T00:00:00"
     ET.SubElement(grp, 'NbOfTxs').text = str(nb_tx)
@@ -52,8 +51,8 @@ def convert_csv_to_xml(csv_bytes):
     initpty = ET.SubElement(grp, 'InitgPty')
     ET.SubElement(initpty, 'Nm').text = debtor_name
 
-    # Payment Information
-    pinf = ET.SubElement(root, 'PmtInf')
+    # Payment Info
+    pinf = ET.SubElement(cstmr, 'PmtInf')
     ET.SubElement(pinf, 'PmtInfId').text = msgid
     ET.SubElement(pinf, 'PmtMtd').text = 'TRF'
     ET.SubElement(pinf, 'BtchBookg').text = 'false'
@@ -87,11 +86,11 @@ def convert_csv_to_xml(csv_bytes):
         amt = ET.SubElement(tx, 'Amt')
         inst = ET.SubElement(amt, 'InstdAmt', Ccy=r[12])
         inst.text = r[13].replace(',', '.')
-        # Creditor Agent
+        # CdtrAgt
         cagt = ET.SubElement(tx, 'CdtrAgt')
         fin = ET.SubElement(cagt, 'FinInstnId')
         ET.SubElement(fin, 'BICFI').text = r[10].strip()
-        # Creditor
+        # Cdtr
         cdt = ET.SubElement(tx, 'Cdtr')
         ET.SubElement(cdt, 'Nm').text = r[4].strip()
         pstl = ET.SubElement(cdt, 'PstlAdr')
@@ -99,11 +98,11 @@ def convert_csv_to_xml(csv_bytes):
         combined = f"{addr1}, {addr2}" if addr1 and addr2 else addr1 or addr2
         if combined:
             ET.SubElement(pstl, 'AdrLine').text = combined
-        # Creditor Account
+        # CdtrAcct
         cact = ET.SubElement(tx, 'CdtrAcct')
         acid = ET.SubElement(cact, 'Id')
         ET.SubElement(acid, 'IBAN').text = r[35].replace(' ', '')
-        # Remittance
+        # RmtInf
         rmt = ET.SubElement(tx, 'RmtInf')
         ET.SubElement(rmt, 'Ustrd').text = r[2].strip()
         ref_val = r[36].strip() if len(r) > 36 and r[36].strip() else 'Ryft'
@@ -114,18 +113,17 @@ def convert_csv_to_xml(csv_bytes):
         ET.SubElement(cdorp, 'Cd').text = 'SCOR'
         ET.SubElement(cri, 'Ref').text = ref_val
 
-    # Serialize to bytes
-    buffer = io.BytesIO()
-    ET.ElementTree(root).write(buffer, xml_declaration=True, encoding='utf-8', method='xml')
-    return buffer.getvalue()
+    # Serialize
+    buf = io.BytesIO()
+    ET.ElementTree(doc).write(buf, xml_declaration=True, encoding='utf-8', method='xml')
+    return buf.getvalue()
 
 # Streamlit UI
 st.title('CSV to pain.001.001.09 Converter')
-
 uploaded = st.file_uploader('Upload your CSV file', type='csv')
 if uploaded:
-    xml_bytes = convert_csv_to_xml(uploaded.getvalue())
-    if xml_bytes:
-        st.download_button('Download XML', data=xml_bytes, file_name='payments.xml', mime='application/xml')
+    xml = convert_csv_to_xml(uploaded.getvalue())
+    if xml:
+        st.download_button('Download XML', data=xml, file_name='payments.xml', mime='application/xml')
     else:
-        st.error('Failed to parse CSV. Ensure it matches the expected format.')
+        st.error('Failed to parse CSV. Ensure expected format.')
