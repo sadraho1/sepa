@@ -13,97 +13,115 @@ def generate_sepa_xml(df: pd.DataFrame,
     and structured (Strd/CdtrRefInf) references.
     Returns the filename of the written XML.
     """
-    # Clean and convert amounts
-    df = df.dropna(subset=["IBAN", "Amount"])
-    df["Amount_Corrected"] = (
-        df["Amount"].astype(str)
-             .str.replace(",", ".")
-             .str.replace(" ", "")
-             .astype(float)
+    # --- 1) Detect the column names in your CSV ---
+    cols = {c.lower(): c for c in df.columns}
+    # Beneficiary name
+    benef_col = next((v for k, v in cols.items() if "beneficiary name" in k), None)
+    # IBAN (or “Beneficiary account”)
+    iban_col = next((v for k, v in cols.items() if "iban" in k or "beneficiary account" in k), None)
+    # Amount
+    amount_col = next((v for k, v in cols.items() if k == "amount"), None)
+    # Reference (structured)
+    ref_col = cols.get("reference")
+    # Payment description (unstructured)
+    desc_col = next((v for k, v in cols.items() if "description" in k), None)
+
+    # Drop rows missing the absolute essentials
+    df = df.dropna(subset=[iban_col, amount_col])
+
+    # Convert Amount to float
+    df["Amount_Clean"] = (
+        df[amount_col].astype(str)
+                         .str.replace(",", ".")
+                         .str.replace(" ", "")
+                         .astype(float)
     )
 
     # Header values
-    ctrl_sum = df["Amount_Corrected"].sum()
-    now_iso = datetime.now().isoformat()
-    msg_id = f"MSG{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    ctrl_sum = df["Amount_Clean"].sum()
+    now_iso  = datetime.now().isoformat()
+    msg_id   = f"MSG{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-    # Root & Customer Credit Transfer Initiation
-    root = ET.Element("Document",
-                      xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09")
-    cstmr_cdt_trf_initn = ET.SubElement(root, "CstmrCdtTrfInitn")
+    # --- 2) Build XML skeleton ---
+    NS = "urn:iso:std:iso:20022:tech:xsd:pain.001.001.09"
+    root = ET.Element("Document", xmlns=NS)
+    cstmr = ET.SubElement(root, "CstmrCdtTrfInitn")
 
     # Group Header
-    grp_hdr = ET.SubElement(cstmr_cdt_trf_initn, "GrpHdr")
-    ET.SubElement(grp_hdr, "MsgId").text = msg_id
-    ET.SubElement(grp_hdr, "CreDtTm").text = now_iso
-    ET.SubElement(grp_hdr, "NbOfTxs").text = str(len(df))
-    ET.SubElement(grp_hdr, "CtrlSum").text = f"{ctrl_sum:.2f}"
-    initg_pty = ET.SubElement(grp_hdr, "InitgPty")
-    ET.SubElement(initg_pty, "Nm").text = debtor_name
+    grp = ET.SubElement(cstmr, "GrpHdr")
+    ET.SubElement(grp, "MsgId").text      = msg_id
+    ET.SubElement(grp, "CreDtTm").text    = now_iso
+    ET.SubElement(grp, "NbOfTxs").text    = str(len(df))
+    ET.SubElement(grp, "CtrlSum").text    = f"{ctrl_sum:.2f}"
+    initg = ET.SubElement(grp, "InitgPty")
+    ET.SubElement(initg, "Nm").text       = debtor_name
 
     # Payment Information
-    pmt_inf = ET.SubElement(cstmr_cdt_trf_initn, "PmtInf")
-    ET.SubElement(pmt_inf, "PmtInfId").text = f"PmtInf{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    ET.SubElement(pmt_inf, "PmtMtd").text = "TRF"
-    ET.SubElement(pmt_inf, "BtchBookg").text = "true"
-    ET.SubElement(pmt_inf, "NbOfTxs").text = str(len(df))
-    ET.SubElement(pmt_inf, "CtrlSum").text = f"{ctrl_sum:.2f}"
-    pmt_tp_inf = ET.SubElement(pmt_inf, "PmtTpInf")
-    svc_lvl = ET.SubElement(pmt_tp_inf, "SvcLvl")
-    ET.SubElement(svc_lvl, "Cd").text = "SEPA"
-    ET.SubElement(pmt_inf, "ReqdExctnDt").text = datetime.now().strftime("%Y-%m-%d")
+    pmt = ET.SubElement(cstmr, "PmtInf")
+    ET.SubElement(pmt, "PmtInfId").text   = f"PmtInf{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    ET.SubElement(pmt, "PmtMtd").text     = "TRF"
+    ET.SubElement(pmt, "BtchBookg").text  = "true"
+    ET.SubElement(pmt, "NbOfTxs").text    = str(len(df))
+    ET.SubElement(pmt, "CtrlSum").text    = f"{ctrl_sum:.2f}"
+    pti = ET.SubElement(pmt, "PmtTpInf")
+    svc = ET.SubElement(pti, "SvcLvl")
+    ET.SubElement(svc, "Cd").text         = "SEPA"
+    ET.SubElement(pmt, "ReqdExctnDt").text= datetime.now().strftime("%Y-%m-%d")
 
-    # Debtor (your) details
-    dbtr = ET.SubElement(pmt_inf, "Dbtr")
-    ET.SubElement(dbtr, "Nm").text = debtor_name
-    dbtr_acct = ET.SubElement(pmt_inf, "DbtrAcct")
-    dbtr_acct_id = ET.SubElement(dbtr_acct, "Id")
-    ET.SubElement(dbtr_acct_id, "IBAN").text = debtor_iban
-    dbtr_agt = ET.SubElement(pmt_inf, "DbtrAgt")
-    fin_instn_id = ET.SubElement(dbtr_agt, "FinInstnId")
-    ET.SubElement(fin_instn_id, "BIC").text = debtor_bic
-    ET.SubElement(pmt_inf, "ChrgBr").text = "SLEV"
+    # Debtor
+    dbtr = ET.SubElement(pmt, "Dbtr")
+    ET.SubElement(dbtr, "Nm").text        = debtor_name
+    dbac = ET.SubElement(pmt, "DbtrAcct")
+    dbid = ET.SubElement(dbac, "Id")
+    ET.SubElement(dbid, "IBAN").text      = debtor_iban
+    dagt = ET.SubElement(pmt, "DbtrAgt")
+    fin  = ET.SubElement(dagt, "FinInstnId")
+    ET.SubElement(fin, "BIC").text        = debtor_bic
+    ET.SubElement(pmt, "ChrgBr").text     = "SLEV"
 
-    # Individual Credit Transfer Txns
+    # --- 3) Per-row Credit Transfer blocks ---
     for idx, row in df.iterrows():
-        cdt_trf_tx_inf = ET.SubElement(pmt_inf, "CdtTrfTxInf")
-        # Payment ID
-        pmt_id = ET.SubElement(cdt_trf_tx_inf, "PmtId")
-        remit = str(row.get("CLRHS-42 2025-05-16", "")).strip()
-        reference = remit[:35] if remit else f"TRX-{idx+1:05d}"
-        ET.SubElement(pmt_id, "EndToEndId").text = reference
+        cdt = ET.SubElement(pmt, "CdtTrfTxInf")
 
-        # Amount
-        amt = ET.SubElement(cdt_trf_tx_inf, "Amt")
-        instd_amt = ET.SubElement(amt, "InstdAmt", Ccy=currency)
-        instd_amt.text = f"{row['Amount_Corrected']:.2f}"
+        # 3a) Payment ID
+        pid = ET.SubElement(cdt, "PmtId")
+        # pick structured reference if given, else description, else auto-fallback
+        if ref_col and pd.notna(row[ref_col]) and str(row[ref_col]).strip():
+            ref = str(row[ref_col]).strip()[:35]
+        elif desc_col and pd.notna(row[desc_col]) and str(row[desc_col]).strip():
+            ref = str(row[desc_col]).strip()[:35]
+        else:
+            ref = f"TRX-{idx+1:05d}"
+        ET.SubElement(pid, "EndToEndId").text = ref
 
-        # Creditor
-        cdtr = ET.SubElement(cdt_trf_tx_inf, "Cdtr")
-        ET.SubElement(cdtr, "Nm").text = row["CreditorName"][:70]
-        cdtr_acct = ET.SubElement(cdt_trf_tx_inf, "CdtrAcct")
-        cdtr_id = ET.SubElement(cdtr_acct, "Id")
-        ET.SubElement(cdtr_id, "IBAN").text = row["IBAN"]
+        # 3b) Amount
+        amt = ET.SubElement(cdt, "Amt")
+        inst = ET.SubElement(amt, "InstdAmt", Ccy=currency)
+        inst.text = f"{row['Amount_Clean']:.2f}"
 
-        # Remittance Information (both unstructured and structured)
-        rmt_inf = ET.SubElement(cdt_trf_tx_inf, "RmtInf")
-        ET.SubElement(rmt_inf, "Ustrd").text = reference
+        # 3c) Creditor (beneficiary)
+        cdr = ET.SubElement(cdt, "Cdtr")
+        nm  = row.get(benef_col, "")
+        ET.SubElement(cdr, "Nm").text        = str(nm)[:70]
+        cac = ET.SubElement(cdt, "CdtrAcct")
+        cid = ET.SubElement(cac, "Id")
+        ET.SubElement(cid, "IBAN").text      = row[iban_col]
 
-        strd = ET.SubElement(rmt_inf, "Strd")
-        cdtr_ref_inf = ET.SubElement(strd, "CdtrRefInf")
-        tp = ET.SubElement(cdtr_ref_inf, "Tp")
-        cd_or_prtry = ET.SubElement(tp, "CdOrPrtry")
-        ET.SubElement(cd_or_prtry, "Cd").text = "SCOR"
-        ET.SubElement(cdtr_ref_inf, "Ref").text = reference
+        # 3d) Remittance Information
+        rmt = ET.SubElement(cdt, "RmtInf")
+        ET.SubElement(rmt, "Ustrd").text     = ref
 
-    # Write out the XML
-    output_file = f"sepa_{msg_id}.xml"
-    ET.ElementTree(root).write(
-        output_file,
-        encoding="utf-8",
-        xml_declaration=True
-    )
-    return output_file
+        strd = ET.SubElement(rmt, "Strd")
+        cri  = ET.SubElement(strd, "CdtrRefInf")
+        tp   = ET.SubElement(cri, "Tp")
+        cop  = ET.SubElement(tp, "CdOrPrtry")
+        ET.SubElement(cop, "Cd").text        = "SCOR"
+        ET.SubElement(cri, "Ref").text       = ref
+
+    # --- 4) Write file ---
+    out = f"sepa_{msg_id}.xml"
+    ET.ElementTree(root).write(out, encoding="utf-8", xml_declaration=True)
+    return out
 
 def main():
     st.title("SEPA XML Generator for LHV Bank")
@@ -114,25 +132,18 @@ def main():
     currency    = st.sidebar.text_input("Currency", "EUR")
 
     st.header("Upload Payouts CSV")
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.markdown("**Columns expected:** `CreditorName`, `IBAN`, `Amount`, `CLRHS-42 2025-05-16`")
+    uploaded = st.file_uploader("Choose a CSV file", type="csv")
+    if uploaded:
+        df = pd.read_csv(uploaded)
+        st.write("Detected columns:", list(df.columns))
         if st.button("Generate SEPA XML"):
             if not all([debtor_name, debtor_iban, debtor_bic]):
-                st.error("Please fill in all debtor fields in the sidebar.")
+                st.error("Fill in all debtor fields in the sidebar.")
             else:
-                output_file = generate_sepa_xml(
-                    df, debtor_name, debtor_iban, currency, debtor_bic
-                )
-                st.success(f"SEPA XML generated: `{output_file}`")
-                with open(output_file, "rb") as f:
-                    st.download_button(
-                        "Download XML",
-                        f,
-                        file_name=output_file,
-                        mime="application/xml"
-                    )
+                xml_file = generate_sepa_xml(df, debtor_name, debtor_iban, currency, debtor_bic)
+                st.success(f"Generated `{xml_file}`")
+                with open(xml_file, "rb") as f:
+                    st.download_button("Download XML", f, file_name=xml_file, mime="application/xml")
 
 if __name__ == "__main__":
     main()
