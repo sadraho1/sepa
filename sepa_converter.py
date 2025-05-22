@@ -51,7 +51,7 @@ def generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic):
     for idx, row in df.iterrows():
         cdt_trf_tx_inf = ET.SubElement(pmt_inf, "CdtTrfTxInf")
         pmt_id = ET.SubElement(cdt_trf_tx_inf, "PmtId")
-        remit = str(row["RemittanceInfo"]) if pd.notna(row["RemittanceInfo"]) else ""
+        remit = str(row["CLRHS-42 2025-05-16"]) if pd.notna(row["CLRHS-42 2025-05-16"]) else ""
         reference = remit.strip()[:35] if remit.strip() else f"TRX-{idx+1:05d}"
         ET.SubElement(pmt_id, "EndToEndId").text = reference
 
@@ -74,7 +74,7 @@ def generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic):
     ET.ElementTree(root).write(output_file, encoding="utf-8", xml_declaration=True)
     return output_file
 
-st.title("SEPA XML Converter (pain.001.001.09)")
+st.title("SEPA XML Converter (Reference = Description)")
 
 uploaded_file = st.file_uploader("Upload CSV", type="csv")
 
@@ -86,32 +86,23 @@ with st.expander("Advanced Settings"):
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.write("Preview of Uploaded Data:")
-    st.dataframe(df.head())
+    df["CreditorName"] = df.iloc[:, 4]
+    df["IBAN"] = df.iloc[:, 35]
+    df["Amount"] = df.iloc[:, 13]
 
-    st.write("### Map Your Columns")
-    col_names = df.columns.tolist()
+    if "CLRHS-42 2025-05-16" not in df.columns:
+        st.error("Reference column 'CLRHS-42 2025-05-16' not found.")
+    else:
+        st.dataframe(df.head())
 
-    col_creditor = st.selectbox("Creditor Name Column", col_names, index=4)
-    col_iban = st.selectbox("IBAN Column", col_names, index=35)
-    col_amount = st.selectbox("Amount Column", col_names, index=13)
-    col_remittance = st.selectbox("Remittance Info Column", col_names, index=37)
+        if st.button("Generate SEPA XML"):
+            xml_file = generate_sepa_xml(df, debtor_name, debtor_iban, currency, bic)
 
-    if st.button("Generate SEPA XML"):
-        df_sepa = pd.DataFrame({
-            "CreditorName": df[col_creditor],
-            "IBAN": df[col_iban],
-            "Amount": df[col_amount],
-            "RemittanceInfo": df[col_remittance]
-        })
-
-        xml_file = generate_sepa_xml(df_sepa, debtor_name, debtor_iban, currency, bic)
-
-        with open(xml_file, "rb") as f:
-            st.download_button(
-                label="📥 Download SEPA XML", 
-                data=f,
-                file_name=xml_file,
-                mime="application/xml"
-            )
-        os.remove(xml_file)
+            with open(xml_file, "rb") as f:
+                st.download_button(
+                    label="📥 Download SEPA XML", 
+                    data=f,
+                    file_name=xml_file,
+                    mime="application/xml"
+                )
+            os.remove(xml_file)
