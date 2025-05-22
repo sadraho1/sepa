@@ -4,12 +4,10 @@ import io
 import xml.etree.ElementTree as ET
 from decimal import Decimal
 
-# ISO20022 namespace and schema
+# Namespaces
 NS = 'urn:iso:std:iso:20022:tech:xsd:pain.001.001.09'
 XSI = 'http://www.w3.org/2001/XMLSchema-instance'
 SCHEMA_LOCATION = f"{NS} pain.001.001.09.xsd"
-
-# Register namespace
 ET.register_namespace('', NS)
 ET.register_namespace('xsi', XSI)
 
@@ -22,7 +20,7 @@ def convert_csv_to_xml(csv_bytes):
         return None
     header, payments = rows[0], rows[1:]
 
-    # Header info
+    # Header fields
     msgid = header[2].strip() or 'MSG1'
     creation_date = header[32].split()[-1]
     debtor_name = header[4].strip()
@@ -34,8 +32,8 @@ def convert_csv_to_xml(csv_bytes):
     ctrl_sum = sum(amounts)
     nb_tx = len(payments)
 
-    # Root Document element
-    doc = ET.Element('Document', {
+    # Root Document
+    doc = ET.Element(f'{{{NS}}}Document', {
         'xmlns': NS,
         'xmlns:xsi': XSI,
         'xsi:schemaLocation': SCHEMA_LOCATION
@@ -43,75 +41,80 @@ def convert_csv_to_xml(csv_bytes):
     cstmr = ET.SubElement(doc, f'{{{NS}}}CstmrCdtTrfInitn')
 
     # Group Header
-    grp = ET.SubElement(cstmr, 'GrpHdr')
-    ET.SubElement(grp, 'MsgId').text = msgid
-    ET.SubElement(grp, 'CreDtTm').text = f"{creation_date}T00:00:00"
-    ET.SubElement(grp, 'NbOfTxs').text = str(nb_tx)
-    ET.SubElement(grp, 'CtrlSum').text = f"{ctrl_sum:.2f}"
-    initpty = ET.SubElement(grp, 'InitgPty')
-    ET.SubElement(initpty, 'Nm').text = debtor_name
+    grp = ET.SubElement(cstmr, f'{{{NS}}}GrpHdr')
+    ET.SubElement(grp, f'{{{NS}}}MsgId').text = msgid
+    ET.SubElement(grp, f'{{{NS}}}CreDtTm').text = f"{creation_date}T00:00:00"
+    ET.SubElement(grp, f'{{{NS}}}NbOfTxs').text = str(nb_tx)
+    ET.SubElement(grp, f'{{{NS}}}CtrlSum').text = f"{ctrl_sum:.2f}"
+    initpty = ET.SubElement(grp, f'{{{NS}}}InitgPty')
+    ET.SubElement(initpty, f'{{{NS}}}Nm').text = debtor_name
 
-    # Payment Info
-    pinf = ET.SubElement(cstmr, 'PmtInf')
-    ET.SubElement(pinf, 'PmtInfId').text = msgid
-    ET.SubElement(pinf, 'PmtMtd').text = 'TRF'
-    ET.SubElement(pinf, 'BtchBookg').text = 'false'
-    ET.SubElement(pinf, 'NbOfTxs').text = str(nb_tx)
-    ET.SubElement(pinf, 'CtrlSum').text = f"{ctrl_sum:.2f}"
-    ptype = ET.SubElement(pinf, 'PmtTpInf')
-    svc = ET.SubElement(ptype, 'SvcLvl')
-    ET.SubElement(svc, 'Cd').text = 'SEPA'
-    reqd = ET.SubElement(pinf, 'ReqdExctnDt')
-    ET.SubElement(reqd, 'Dt').text = creation_date
+    # Payment Information
+    pinf = ET.SubElement(cstmr, f'{{{NS}}}PmtInf')
+    ET.SubElement(pinf, f'{{{NS}}}PmtInfId').text = msgid
+    ET.SubElement(pinf, f'{{{NS}}}PmtMtd').text = 'TRF'
+    ET.SubElement(pinf, f'{{{NS}}}BtchBookg').text = 'false'
+    ET.SubElement(pinf, f'{{{NS}}}NbOfTxs').text = str(nb_tx)
+    ET.SubElement(pinf, f'{{{NS}}}CtrlSum').text = f"{ctrl_sum:.2f}"
+    ptype = ET.SubElement(pinf, f'{{{NS}}}PmtTpInf')
+    svc = ET.SubElement(ptype, f'{{{NS}}}SvcLvl')
+    ET.SubElement(svc, f'{{{NS}}}Cd').text = 'SEPA'
+    reqd = ET.SubElement(pinf, f'{{{NS}}}ReqdExctnDt')
+    ET.SubElement(reqd, f'{{{NS}}}Dt').text = creation_date
 
     # Debtor
-    dbtr = ET.SubElement(pinf, 'Dbtr')
-    ET.SubElement(dbtr, 'Nm').text = debtor_name
-    dbacct = ET.SubElement(pinf, 'DbtrAcct')
-    dbid = ET.SubElement(dbacct, 'Id')
-    ET.SubElement(dbid, 'IBAN').text = debtor_iban
-    dbagt = ET.SubElement(pinf, 'DbtrAgt')
-    finid = ET.SubElement(dbagt, 'FinInstnId')
-    ET.SubElement(finid, 'BICFI').text = debtor_bic
-    ET.SubElement(pinf, 'ChrgBr').text = 'SLEV'
+    dbtr = ET.SubElement(pinf, f'{{{NS}}}Dbtr')
+    ET.SubElement(dbtr, f'{{{NS}}}Nm').text = debtor_name
+    dbacct = ET.SubElement(pinf, f'{{{NS}}}DbtrAcct')
+    dbid = ET.SubElement(dbacct, f'{{{NS}}}Id')
+    ET.SubElement(dbid, f'{{{NS}}}IBAN').text = debtor_iban
+    dbagt = ET.SubElement(pinf, f'{{{NS}}}DbtrAgt')
+    finid = ET.SubElement(dbagt, f'{{{NS}}}FinInstnId')
+    ET.SubElement(finid, f'{{{NS}}}BICFI').text = debtor_bic
+    ET.SubElement(pinf, f'{{{NS}}}ChrgBr').text = 'SLEV'
 
     # Transactions
     for r in payments:
-        tx = ET.SubElement(pinf, 'CdtTrfTxInf')
-        # PmtId
-        pid = ET.SubElement(tx, 'PmtId')
+        tx = ET.SubElement(pinf, f'{{{NS}}}CdtTrfTxInf')
+        # Payment ID
+        pid = ET.SubElement(tx, f'{{{NS}}}PmtId')
         e2e = r[34].strip() if len(r) > 34 and r[34].strip() else r[2].strip()
-        ET.SubElement(pid, 'EndToEndId').text = e2e
+        ET.SubElement(pid, f'{{{NS}}}EndToEndId').text = e2e
+
         # Amount
-        amt = ET.SubElement(tx, 'Amt')
-        inst = ET.SubElement(amt, 'InstdAmt', Ccy=r[12])
+        amt = ET.SubElement(tx, f'{{{NS}}}Amt')
+        inst = ET.SubElement(amt, f'{{{NS}}}InstdAmt', Ccy=r[12])
         inst.text = r[13].replace(',', '.')
-        # CdtrAgt
-        cagt = ET.SubElement(tx, 'CdtrAgt')
-        fin = ET.SubElement(cagt, 'FinInstnId')
-        ET.SubElement(fin, 'BICFI').text = r[10].strip()
-        # Cdtr
-        cdt = ET.SubElement(tx, 'Cdtr')
-        ET.SubElement(cdt, 'Nm').text = r[4].strip()
-        pstl = ET.SubElement(cdt, 'PstlAdr')
+
+        # Creditor Agent
+        cagt = ET.SubElement(tx, f'{{{NS}}}CdtrAgt')
+        fin = ET.SubElement(cagt, f'{{{NS}}}FinInstnId')
+        ET.SubElement(fin, f'{{{NS}}}BICFI').text = r[10].strip()
+
+        # Creditor
+        cdt = ET.SubElement(tx, f'{{{NS}}}Cdtr')
+        ET.SubElement(cdt, f'{{{NS}}}Nm').text = r[4].strip()
+        pstl = ET.SubElement(cdt, f'{{{NS}}}PstlAdr')
         addr1, addr2 = r[5].strip(), r[6].strip()
         combined = f"{addr1}, {addr2}" if addr1 and addr2 else addr1 or addr2
         if combined:
-            ET.SubElement(pstl, 'AdrLine').text = combined
-        # CdtrAcct
-        cact = ET.SubElement(tx, 'CdtrAcct')
-        acid = ET.SubElement(cact, 'Id')
-        ET.SubElement(acid, 'IBAN').text = r[35].replace(' ', '')
-        # RmtInf
-        rmt = ET.SubElement(tx, 'RmtInf')
-        ET.SubElement(rmt, 'Ustrd').text = r[2].strip()
+            ET.SubElement(pstl, f'{{{NS}}}AdrLine').text = combined
+
+        # Creditor Account
+        cact = ET.SubElement(tx, f'{{{NS}}}CdtrAcct')
+        acid = ET.SubElement(cact, f'{{{NS}}}Id')
+        ET.SubElement(acid, f'{{{NS}}}IBAN').text = r[35].replace(' ', '')
+
+        # Remittance Information
+        rmt = ET.SubElement(tx, f'{{{NS}}}RmtInf')
+        ET.SubElement(rmt, f'{{{NS}}}Ustrd').text = r[2].strip()
         ref_val = r[36].strip() if len(r) > 36 and r[36].strip() else 'Ryft'
-        strd = ET.SubElement(rmt, 'Strd')
-        cri = ET.SubElement(strd, 'CdtrRefInf')
-        tp = ET.SubElement(cri, 'Tp')
-        cdorp = ET.SubElement(tp, 'CdOrPrtry')
-        ET.SubElement(cdorp, 'Cd').text = 'SCOR'
-        ET.SubElement(cri, 'Ref').text = ref_val
+        strd = ET.SubElement(rmt, f'{{{NS}}}Strd')
+        cri = ET.SubElement(strd, f'{{{NS}}}CdtrRefInf')
+        tp = ET.SubElement(cri, f'{{{NS}}}Tp')
+        cdorp = ET.SubElement(tp, f'{{{NS}}}CdOrPrtry')
+        ET.SubElement(cdorp, f'{{{NS}}}Cd').text = 'SCOR'
+        ET.SubElement(cri, f'{{{NS}}}Ref').text = ref_val
 
     # Serialize
     buf = io.BytesIO()
@@ -122,8 +125,8 @@ def convert_csv_to_xml(csv_bytes):
 st.title('CSV to pain.001.001.09 Converter')
 uploaded = st.file_uploader('Upload your CSV file', type='csv')
 if uploaded:
-    xml = convert_csv_to_xml(uploaded.getvalue())
-    if xml:
-        st.download_button('Download XML', data=xml, file_name='payments.xml', mime='application/xml')
+    xml_bytes = convert_csv_to_xml(uploaded.getvalue())
+    if xml_bytes:
+        st.download_button('Download XML', data=xml_bytes, file_name='payments.xml', mime='application/xml')
     else:
         st.error('Failed to parse CSV. Ensure expected format.')
